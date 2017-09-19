@@ -26,6 +26,7 @@ HRESULT timing_trigger(IWbemClassObject *event_filter, wchar_t *trigger_name, wc
 HRESULT generic_action(IWbemClassObject *event_consumer, wchar_t *action_name, wchar_t *script);
 HRESULT process_kill_action(IWbemClassObject *event_consumer, wchar_t *action_name);
 HRESULT enc_powershell_action(IWbemClassObject *event_consumer, wchar_t *action_name, wchar_t *enc_cmd);
+HRESULT script_generic_action(IWbemClassObject *event_consumer, wchar_t *action_name, wchar_t *file_path);
 
 /****************************************************************************
  * Event_consumer_binding instance configure functions (Backdoor Actions)

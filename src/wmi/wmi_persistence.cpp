@@ -272,6 +272,94 @@ oShell.Run(\"powershell.exe -executionpolicy bypass -encodedcommand ";
 	return hres;
 }
 
+//this is a rather hacky function for reading a script file and passing it to WMI action creation
+//only accepts text files encoded in ANSI (ASCII, UTF8), UTF8-BOM, UTF16-LE
+HRESULT script_generic_action(IWbemClassObject *event_consumer, wchar_t *action_name, wchar_t *file_path)
+{
+	HRESULT hres = S_OK;
+	HANDLE hFile;
+	const DWORD numbytes = 16534;
+	char *buf = NULL, *buf_offset = NULL;
+	wchar_t *buf2 = NULL;
+	DWORD bytesRead = 0, fileSize = 0;
+	BOOL ret;
+	size_t convertedChars = 0, newSize = 0;
+	bool utf8 = true;
+	errno_t err;
+
+	//open file
+	hFile = CreateFile(file_path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if(hFile == INVALID_HANDLE_VALUE) {
+		printf("[-] script_generic_action: OpenFile error: 0x%x\n", GetLastError());
+		return S_FALSE;
+	}
+
+	//get file size
+	fileSize = GetFileSize(hFile, NULL);
+	if(fileSize <= 0) {
+		printf("[-] script_generic_action: not valid file size\n");
+		CloseHandle(hFile);
+		return S_FALSE;
+	}
+
+	//initialize buffer
+	buf = (char *)malloc(fileSize+2);
+	if(!buf) {
+		printf("[-] script_generic_action:  malloc failed\n");
+		CloseHandle(hFile);
+		return S_FALSE;
+	}
+	memset(buf, 0, fileSize+2);
+
+	//read in file data
+	ret = ReadFile(hFile, buf, fileSize, &bytesRead, NULL);
+	if(ret == FALSE || bytesRead != fileSize) {
+		printf("[-] script_generic_action: ReadFile failed: 0x%x\n", GetLastError());
+		CloseHandle(hFile);
+		return S_FALSE;
+	}
+	CloseHandle(hFile);
+
+	//parse start of file and try and figure out encoding (default to utf8)
+	if(_memicmp(buf, "\xef\xbb\xbf", 3) == 0) {
+		utf8 = true;
+		buf_offset = buf+3; //skip over BOM
+	}
+	else if((_memicmp(buf, "\xff\xfe", 2) == 0)) {// || (_memicmp(buf, "\xfe\xff", 2) == 0)) {
+		utf8 = false;
+		buf_offset = buf+2;
+	}
+	else {
+		// assume raw ANSI
+		buf_offset = buf;
+	}
+
+	//convert buf to wchar_t
+	if(utf8 == false) { //assume utf16 no conversion necessary
+		buf2 = (wchar_t *)buf_offset;
+	}
+	else {
+		err = mbstowcs_s(&convertedChars, NULL, 0, buf, 0);
+		newSize = (convertedChars * sizeof(wchar_t)) + sizeof(wchar_t);
+		buf2 = (wchar_t *)malloc(newSize);
+		if(!buf2) {
+			goto cleanup;
+		}
+		memset(buf2, 0, newSize);
+		err = mbstowcs_s(&convertedChars, buf2, convertedChars, buf_offset, convertedChars-1);
+	}
+
+	hres = generic_action(event_consumer, action_name, buf2);
+
+cleanup:
+	if(buf)
+		free(buf);
+	if(buf2)
+		free(buf2);
+
+	return hres;
+}
+
 /****************************************************************************
  * Event_consumer_binding instance configure functions (Bindings)
  */
