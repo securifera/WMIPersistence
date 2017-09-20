@@ -273,7 +273,7 @@ oShell.Run(\"powershell.exe -executionpolicy bypass -encodedcommand ";
 }
 
 //this is a rather hacky function for reading a script file and passing it to WMI action creation
-//only accepts text files encoded in ANSI (ASCII, UTF8), UTF8-BOM, UTF16-LE
+//only accepts text files encoded in ASCII, UTF8, UTF8-BOM, UTF16-LE
 HRESULT script_generic_action(IWbemClassObject *event_consumer, wchar_t *action_name, wchar_t *file_path)
 {
 	HRESULT hres = S_OK;
@@ -330,7 +330,7 @@ HRESULT script_generic_action(IWbemClassObject *event_consumer, wchar_t *action_
 		buf_offset = buf+2;
 	}
 	else {
-		// assume raw ANSI
+		// assume raw ASCII
 		buf_offset = buf;
 	}
 

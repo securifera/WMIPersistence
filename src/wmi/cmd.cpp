@@ -116,8 +116,161 @@ cleanup:
 	return 0;
 }
 
-int file_upload(IWbemServices *pSvc)
+//helper functions
+HRESULT method_object_helper(IWbemServices *pSvc, wchar_t *className, wchar_t *methodName, IWbemClassObject **pClassInstance)
 {
-	//TODO
+	HRESULT hres = S_OK;
+	IWbemClassObject *pClass = NULL;
+	IWbemClassObject *pInParamsDefinition = NULL;
+
+	//get class object
+	hres = pSvc->GetObjectW(_bstr_t(className), 0, NULL, &pClass, NULL);
+	if(FAILED(hres)) {
+		wprintf(L"[-] Failed to get %S object: 0x%x\n", className, hres);
+		return hres;
+	}
+
+	//get method object
+	hres = pClass->GetMethod(_bstr_t(methodName), 0,  &pInParamsDefinition, NULL);
+	if(FAILED(hres)) {
+		wprintf(L"[-] Failed to get parameter defintions for %S method: 0x%x\n", methodName, hres);
+		goto cleanup;
+	}
+
+	//spawn instance of method object
+	hres = pInParamsDefinition->SpawnInstance(0, pClassInstance);
+	if(FAILED(hres)) {
+		printf("[-] Failed to spawn isntance of class: 0x%x\n", hres);
+		goto cleanup;
+	}
+
+cleanup:
+	if(pClass)
+		pClass->Release();
+	if(pInParamsDefinition)
+		pInParamsDefinition->Release();
+
+	return hres;
+}
+
+HRESULT registry_key_helper(IWbemServices *pSvc, wchar_t *name, wchar_t *method, HKEY hDefKey, wchar_t *sSubKeyName)
+{
+	HRESULT hres = S_OK;
+	IWbemClassObject *pClassInstance = NULL;
+	IWbemClassObject *pOutParams = NULL;
+	VARIANT v;
+
+	BSTR className = SysAllocString(name);
+	BSTR methodName = SysAllocString(method);
+
+	//get instance of method object
+	hres = method_object_helper(pSvc, name, method, &pClassInstance);
+	if(FAILED(hres)) {
+		goto cleanup;
+	}
+
+	//set properties for method parameters
+	VariantInit(&v);
+	
+	V_VT(&v) = VT_I4;
+	V_I4(&v) = (UINT32)hDefKey;
+	hres = pClassInstance->Put(_bstr_t(L"hDefKey"), 0, &v, 0);
+	if(FAILED(hres)) {
+		printf("[-] failed to set hDefKey property 0x%x\n", hres);
+		goto cleanup;
+	}
+	VariantClear(&v);
+
+	V_VT(&v) = VT_BSTR;
+	V_BSTR(&v) = SysAllocString(sSubKeyName);
+	hres = pClassInstance->Put(_bstr_t(L"sSubKeyName"), 0, &v, 0);
+	if(FAILED(hres)) {
+		printf("[-] failed to set sSubKeyName property 0x%x\n", hres);
+		goto cleanup;
+	}
+	VariantClear(&v);
+
+	//execute method
+	hres = pSvc->ExecMethod(className, methodName, 0, NULL, pClassInstance, &pOutParams, NULL);
+	if(FAILED(hres)) {
+		printf("[-] failed to execute method 0x%x\n", hres);
+	}
+
+	//TODO proper return value handling
+    hres = pOutParams->Get(_bstr_t(L"ReturnValue"), 0, &v, NULL, 0);
+
+cleanup:
+	if(pClassInstance)
+		pClassInstance->Release();
+	if(pOutParams)
+		pOutParams->Release();
+	VariantClear(&v);
+	SysFreeString(methodName);
+	SysFreeString(className);
+
 	return 0;
+}
+
+//registry functions
+HRESULT create_key(IWbemServices *pSvc, HKEY hDefKey, wchar_t *sSubKeyName)
+{
+	HRESULT hres = S_OK;
+
+	hres = registry_key_helper(pSvc, L"StdRegProv", L"CreateKey", hDefKey, sSubKeyName);
+
+	return hres;
+}
+
+HRESULT delete_key(IWbemServices *pSvc, HKEY hDefKey, wchar_t *sSubKeyName)
+{
+	HRESULT hres = S_OK;
+
+	hres = registry_key_helper(pSvc, L"StdRegProv", L"DeleteKey", hDefKey, sSubKeyName);
+
+	return hres;
+}
+
+//other functions
+HRESULT create_process(IWbemServices *pSvc, wchar_t *cmd)
+{
+	HRESULT hres = S_OK;
+	IWbemClassObject *pClassInstance = NULL;
+	IWbemClassObject *pOutParams = NULL;
+	VARIANT v;
+
+	//get instance of method object
+	hres = method_object_helper(pSvc, L"Win32_Process", L"Create", &pClassInstance);
+	if(FAILED(hres)) {
+		goto cleanup;
+	}
+
+	//set properties for method parameters
+	VariantInit(&v);
+
+	V_VT(&v) = VT_BSTR;
+	V_BSTR(&v) = SysAllocString(cmd);
+	hres = pClassInstance->Put(_bstr_t(L"CommandLine"), 0, &v, 0);
+	if(FAILED(hres)) {
+		printf("[-] failed to set CommandLine property 0x%x\n", hres);
+		goto cleanup;
+	}
+	VariantClear(&v);
+
+	//execute method
+	hres = pSvc->ExecMethod(_bstr_t(L"Win32_Process"), _bstr_t(L"Create"), 0, NULL, pClassInstance, &pOutParams, NULL);
+	if(FAILED(hres)) {
+		printf("[-] failed to execute method 0x%x\n", hres);
+	}
+
+	//TODO proper return value handling
+    hres = pOutParams->Get(_bstr_t(L"ReturnValue"), 0, &v, NULL, 0);
+
+cleanup:
+	if(pClassInstance)
+		pClassInstance->Release();
+	if(pOutParams)
+		pOutParams->Release();
+	VariantClear(&v);
+
+	return hres;
 }
